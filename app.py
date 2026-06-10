@@ -13,10 +13,27 @@ st.markdown("基于 LangChain 的智能行程生成与旅行问答助手")
 
 # ---------- 侧边栏配置 ----------
 st.sidebar.header("⚙️ 配置")
-# API Key 输入，默认从环境变量读取
-default_key = os.getenv("DEEPSEEK_API_KEY", "")
-api_key = st.sidebar.text_input("DeepSeek API Key", value=default_key, type="password")
-# 知识库目录
+
+# ----- API Key 获取逻辑（不显示输入框）-----
+def get_api_key():
+    try:
+        key = st.secrets["DEEPSEEK_API_KEY"]
+        if key:
+            return key
+    except (KeyError, AttributeError):
+        pass
+    key = os.getenv("DEEPSEEK_API_KEY", "")
+    if key:
+        return key
+    return None
+
+api_key = get_api_key()
+
+if api_key:
+    st.sidebar.success("✅ API Key 已配置（从 Secrets 或环境变量加载）")
+else:
+    st.sidebar.error("❌ 未找到 API Key，请在 Streamlit Secrets 中设置 DEEPSEEK_API_KEY")
+
 knowledge_dir = st.sidebar.text_input("知识库文件夹路径", value="travel_knowledge")
 
 # ---------- 初始化 AI 引擎 ----------
@@ -32,7 +49,7 @@ if api_key:
             except Exception as e:
                 st.sidebar.error(f"初始化失败: {e}")
 else:
-    st.sidebar.warning("请输入 API Key 或设置环境变量 DEEPSEEK_API_KEY")
+    st.sidebar.warning("无法初始化 AI 引擎：缺少 API Key")
 
 # ---------- 主界面：行程生成区域 ----------
 st.header("📅 生成旅行计划")
@@ -49,7 +66,7 @@ with col4:
 
 if st.button("✨ 生成行程", type="primary"):
     if not api_key:
-        st.error("请先在侧边栏输入 API Key")
+        st.error("未配置 API Key，请在 Streamlit Secrets 中添加 DEEPSEEK_API_KEY")
     elif not destination:
         st.error("请输入目的地")
     else:
@@ -60,7 +77,6 @@ if st.button("✨ 生成行程", type="primary"):
             with st.spinner("正在结合本地攻略为您规划行程..."):
                 try:
                     plan = ai.generate_plan(destination, days, budget, interests)
-                    # 存储计划到 session 供后续使用
                     st.session_state.current_plan = plan
                     st.success("行程生成完毕！")
                 except Exception as e:
@@ -71,7 +87,6 @@ if "current_plan" in st.session_state:
     plan = st.session_state.current_plan
     st.subheader(f"📍 {plan.destination} {len(plan.days)}天详细行程")
 
-    # 以时间轴卡片形式展示
     for day in plan.days:
         with st.expander(f"📌 Day {day.day} - {day.hotel or '未指定住宿'}", expanded=(day.day == 1)):
             if day.activities:
@@ -81,7 +96,6 @@ if "current_plan" in st.session_state:
                 st.markdown(f"🍽️ 餐饮推荐：{' / '.join(day.meals)}")
             st.caption(f"🏨 住宿：{day.hotel or '未指定'}")
 
-    # 提供 JSON 下载
     st.download_button(
         label="📥 下载行程 JSON",
         data=plan.model_dump_json(indent=2),
@@ -93,49 +107,41 @@ if "current_plan" in st.session_state:
 st.header("💬 行程对话")
 st.markdown("对已有行程进行追问、修改，或查询距离、汇率等")
 
-# 初始化对话历史（存储在会话中）
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
-# 显示历史消息
 for msg in st.session_state.chat_history:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-# 输入框
 user_input = st.chat_input("在这里输入你的问题...")
 if user_input:
     ai = st.session_state.ai_engine
     if ai is None:
         st.error("AI 引擎未就绪，请检查 API Key")
     else:
-        # 添加用户消息到历史
         st.session_state.chat_history.append({"role": "user", "content": user_input})
         with st.chat_message("user"):
             st.markdown(user_input)
 
-        # 生成回复（使用行程对话链）
         with st.spinner("思考中..."):
             try:
                 if "current_plan" not in st.session_state:
                     reply = "无法找到行程，请先生成行程。"
                 else:
-                    # 准备历史消息列表（不含当前这条刚加的，因为history是之前的历史）
                     history = [
                         {"role": msg["role"], "content": msg["content"]}
-                        for msg in st.session_state.chat_history[:-1]  # 排除当前用户消息
+                        for msg in st.session_state.chat_history[:-1]
                     ]
                     reply = ai.chat(user_input, history)
             except Exception as e:
                 reply = f"出错啦：{e}"
 
-        # 添加助手消息到历史
         st.session_state.chat_history.append({"role": "assistant", "content": reply})
         with st.chat_message("assistant"):
             st.markdown(reply)
         st.rerun()
 
-# 清空对话按钮
 if st.button("清空对话历史"):
     st.session_state.chat_history = []
     st.rerun()
