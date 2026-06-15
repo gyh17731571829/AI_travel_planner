@@ -142,13 +142,11 @@ class TravelPlannerAI:
         self.agent = self._build_agent()
 
     def _build_agent(self):
-        system_prompt = """你是一个智能旅行助手。你必须使用工具来回答用户的问题，尤其是：
+        system_prompt = """你是一个智能旅行助手。你可以调用以下工具来回答用户的问题：
+- convert_currency: 实时汇率转换
+- estimate_distance: 估算两地距离
 
-- 当用户询问汇率、货币换算时，**必须**调用 convert_currency 工具。
-- 当用户询问两地距离时，**必须**调用 estimate_distance 工具。
-
-不要自己猜测或给出参考汇率，一定要用工具获取实时数据。如果工具调用失败，请如实告诉用户失败原因。
-
+如果用户询问这类实时信息，你应该调用相应的工具。对于其他旅行相关问题，请基于已有行程计划回答。
 请始终使用中文回答。"""
         agent = create_agent(
             model=self.llm,
